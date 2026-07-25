@@ -2,7 +2,7 @@ import os
 import asyncio
 import streamlit as st
 import edge_tts
-from cerebras.cloud.sdk import Cerebras
+from openai import OpenAI
 
 # Streamlit UI configuration
 st.set_page_config(page_title="AI Science Storyteller", page_icon="🔬", layout="centered")
@@ -123,19 +123,22 @@ user_prompt = st.text_input("Enter a science concept or question (e.g., How do b
 
 st.markdown("---")
 
-# Safely fetch Cerebras API Key from backend environment variables or Streamlit secrets
-CEREBRAS_API_KEY = os.environ.get("CEREBRAS_API_KEY") or st.secrets.get("CEREBRAS_API_KEY", "")
+# Safely fetch GitHub Token from backend environment variables or Streamlit secrets
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN") or st.secrets.get("GITHUB_TOKEN", "")
 
 # Fixed professional neural voice in English
 NEURAL_VOICE = "en-US-BrianNeural"
 
 def generate_story_and_mood(prompt, grade_level):
-    if not CEREBRAS_API_KEY:
-        return "⚠️ Backend Error: CEREBRAS_API_KEY is missing in the system environment configuration or Streamlit secrets.", "default"
+    if not GITHUB_TOKEN:
+        return "⚠️ Backend Error: GITHUB_TOKEN is missing in the system environment configuration or Streamlit secrets.", "default"
     
     try:
-        # Initialize Cerebras Client
-        client = Cerebras(api_key=CEREBRAS_API_KEY)
+        # Initialize OpenAI Client connected to GitHub Models endpoint
+        client = OpenAI(
+            base_url="https://models.inference.ai.azure.com",
+            api_key=GITHUB_TOKEN,
+        )
 
         creative_instruction = f"""
             You are Professor Phunsuk Wangdu, an elite, world-class specialist science teacher known for making complex science phenomenally clear, intuitive, and engaging.
@@ -152,10 +155,11 @@ def generate_story_and_mood(prompt, grade_level):
            - Conclude with a memorable core scientific takeaway summary.
              """
         
-        # Updated model name to match Cerebras's verified deployment registry string
+        # Call GitHub hosted model (Meta Llama 3.3 70B Instruct)
         response = client.chat.completions.create(
-            model="llama-3.3-70b",
-            messages=[{"role": "user", "content": creative_instruction}]
+            model="meta-llama-3.3-70b-instruct",
+            messages=[{"role": "user", "content": creative_instruction}],
+            temperature=0.7,
         )
         story_text = response.choices[0].message.content.strip()
         
@@ -173,8 +177,9 @@ def generate_story_and_mood(prompt, grade_level):
           {story_text}
          """
         mood_response = client.chat.completions.create(
-            model="llama3.3-70b",
-            messages=[{"role": "user", "content": mood_instruction}]
+            model="meta-llama-3.3-70b-instruct",
+            messages=[{"role": "user", "content": mood_instruction}],
+            temperature=0.3,
         )
         mood_keyword = "default"
         if mood_response.choices[0].message.content:
@@ -184,7 +189,7 @@ def generate_story_and_mood(prompt, grade_level):
         return story_text, mood_keyword
 
     except Exception as e:
-        return f"Error connecting to Cerebras model: {str(e)}", "default"
+        return f"Error connecting to GitHub Model: {str(e)}", "default"
 
 async def convert_text_to_neural_audio(text, output_path, voice):
     communicate = edge_tts.Communicate(text, voice)
