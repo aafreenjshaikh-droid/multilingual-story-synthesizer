@@ -1,10 +1,4 @@
 streamlit
-requests
-edge-tts
-click>=8.1.0,<8.2.0
-huggingface-hub<0.26.0
-
-streamlit
-google-genai
+cerebras_cloud_sdk
 edge-tts
 requests

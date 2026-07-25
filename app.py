@@ -2,7 +2,7 @@ import os
 import asyncio
 import streamlit as st
 import edge_tts
-from google import genai
+from cerebras.cloud.sdk import Cerebras
 
 # Streamlit UI configuration
 st.set_page_config(page_title="AI Science Storyteller", page_icon="🔬", layout="centered")
@@ -52,18 +52,16 @@ def apply_custom_ui(background_url):
         }}
     }}
     
-    /* Styling adjustments for headers and paragraph layout text */
+    /* Styling adjustments for headers and text */
     h1, h2, h3, .story-card p, label {{
         color: #ffffff !important;
         font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     }}
     
-    /* Main body text description color rules */
     [data-testid="stWidgetLabel"] p {{
         color: #ffffff !important;
     }}
     
-    /* Force user typed text in inputs to be clear for readability */
     .stTextInput>div>div>input {{
         background: rgba(255, 255, 255, 0.88) !important;
         color: #111111 !important;
@@ -72,7 +70,6 @@ def apply_custom_ui(background_url):
         font-weight: 500;
     }}
     
-    /* Force Streamlit primary buttons text and styles to stark contrast */
     .stButton>button {{
         background-color: rgba(255, 255, 255, 0.95) !important;
         border: 1px solid rgba(255, 255, 255, 0.9) !important;
@@ -85,14 +82,12 @@ def apply_custom_ui(background_url):
         font-weight: 700 !important;
     }}
     
-    /* Button Hover interaction animation */
     .stButton>button:hover {{
         background-color: #ffffff !important;
         transform: scale(1.03);
         box-shadow: 0 6px 20px rgba(255,255,255,0.4);
     }}
 
-    /* Selectbox custom styling */
     .stSelectbox>div>div>div {{
         background: rgba(255, 255, 255, 0.88) !important;
         color: #111111 !important;
@@ -128,19 +123,19 @@ user_prompt = st.text_input("Enter a science concept or question (e.g., How do b
 
 st.markdown("---")
 
-# Safely fetch Google API Key from backend environment variables or Streamlit secrets
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY") or st.secrets.get("GOOGLE_API_KEY", "")
+# Safely fetch Cerebras API Key from backend environment variables or Streamlit secrets
+CEREBRAS_API_KEY = os.environ.get("CEREBRAS_API_KEY") or st.secrets.get("CEREBRAS_API_KEY", "")
 
 # Fixed professional neural voice in English
 NEURAL_VOICE = "en-US-BrianNeural"
 
 def generate_story_and_mood(prompt, grade_level):
-    if not GOOGLE_API_KEY:
-        return "⚠️ Backend Error: GOOGLE_API_KEY is missing in the system environment configuration.", "default"
+    if not CEREBRAS_API_KEY:
+        return "⚠️ Backend Error: CEREBRAS_API_KEY is missing in the system environment configuration or Streamlit secrets.", "default"
     
     try:
-        # Explicitly pass api_key to the Google GenAI client
-        client = genai.Client(api_key=GOOGLE_API_KEY)
+        # Initialize Cerebras Client
+        client = Cerebras(api_key=CEREBRAS_API_KEY)
 
         creative_instruction = f"""
             You are Professor Phunsuk Wangdu, an elite, world-class specialist science teacher known for making complex science phenomenally clear, intuitive, and engaging.
@@ -157,12 +152,12 @@ def generate_story_and_mood(prompt, grade_level):
            - Conclude with a memorable core scientific takeaway summary.
              """
         
-        # Using current production model: gemini-3.5-flash
-        response = client.models.generate_content(
-            model='gemini-3.5-flash',
-            contents=creative_instruction,
+        # Generate story content using high-speed Llama 3.1 80B / 70B model on Cerebras
+        response = client.chat.completions.create(
+            model="llama-3.3-70b",
+            messages=[{"role": "user", "content": creative_instruction}]
         )
-        story_text = response.text.strip()
+        story_text = response.choices[0].message.content.strip()
         
         # Generate background keyword mood
         mood_instruction = f"""
@@ -177,19 +172,19 @@ def generate_story_and_mood(prompt, grade_level):
           Story:
           {story_text}
          """
-        mood_response = client.models.generate_content(
-            model='gemini-3.5-flash',
-            contents=mood_instruction,
+        mood_response = client.chat.completions.create(
+            model="llama-3.3-70b",
+            messages=[{"role": "user", "content": mood_instruction}]
         )
         mood_keyword = "default"
-        if mood_response.text:
-            mood_keyword = mood_response.text.strip().lower()
+        if mood_response.choices[0].message.content:
+            mood_keyword = mood_response.choices[0].message.content.strip().lower()
             mood_keyword = mood_keyword.replace(".", "").replace('"', '').replace("'", "").split()[0]
         
         return story_text, mood_keyword
 
     except Exception as e:
-        return f"Error connecting to Google GenAI model: {str(e)}", "default"
+        return f"Error connecting to Cerebras model: {str(e)}", "default"
 
 async def convert_text_to_neural_audio(text, output_path, voice):
     communicate = edge_tts.Communicate(text, voice)
