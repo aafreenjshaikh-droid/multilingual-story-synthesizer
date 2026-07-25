@@ -1,8 +1,8 @@
 import os
-import requests
 import asyncio
 import streamlit as st
 import edge_tts
+from google import genai
 
 # Streamlit UI configuration
 st.set_page_config(page_title="AI Science Storyteller", page_icon="🔬", layout="centered")
@@ -128,80 +128,68 @@ user_prompt = st.text_input("Enter a science concept or question (e.g., How do b
 
 st.markdown("---")
 
-# Stable serverless routing endpoints & Backend token configuration
-API_URL = "https://router.huggingface.co/v1/chat/completions"
-
-# Safely fetch Hugging Face token entirely from backend environment variables or Streamlit secrets
-HF_TOKEN = os.environ.get("HF_TOKEN") or st.secrets.get("hf_token", "")
+# Safely fetch Google API Key from backend environment variables or Streamlit secrets
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY") or st.secrets.get("GOOGLE_API_KEY", "")
 
 # Fixed professional neural voice in English
 NEURAL_VOICE = "en-US-BrianNeural"
 
 def generate_story_and_mood(prompt, grade_level):
-    if not HF_TOKEN:
-        return "⚠️ Backend Error: Hugging Face token is missing in the system configuration.", "default"
-    
-    headers = {
-        "Authorization": f"Bearer {HF_TOKEN}",
-        "Content-Type": "application/json"
-    }
-
-    creative_instruction = f"""
-        You are Professor Phunsuk Wangdu, an elite, world-class specialist science teacher known for making complex science phenomenally clear, intuitive, and engaging.
-        Explain the given scientific concept tailored specifically for a student in **{grade_level}**.
-
-      Science Concept / Question:
-      {prompt}
-
-      Core Pedagogical Guidelines:
-       - Match the cognitive depth, vocabulary level, and comprehension style precisely to **{grade_level}** (Keep it simpler and highly visual for lower primary standards, and introduce accurate scientific terminology with deep conceptual clarity for upper grades like 8th to 10th).
-       - Weave the concept into an immersive, crystal-clear story or thought experiment that eliminates confusion completely.
-       - Use clean, structured formatting with exactly 3 well-defined paragraphs.
-       - Ensure high conceptual clarity so the student grasps the fundamental law, mechanism, or working principle effortlessly.
-       - Conclude with a memorable core scientific takeaway summary.
-         """
-    
-    payload_story = {
-        "model": "Qwen/Qwen2.5-7B-Instruct",
-        "messages": [{"role": "user", "content": creative_instruction}],
-        "max_tokens": 850,
-        "temperature": 0.7
-    }
+    if not GOOGLE_API_KEY:
+        return "⚠️ Backend Error: GOOGLE_API_KEY is missing in the system environment configuration.", "default"
     
     try:
-        response = requests.post(API_URL, headers=headers, json=payload_story, timeout=20)
-        if response.status_code == 200:
-            story_text = response.json()["choices"][0]["message"]["content"].strip()
-            
-            mood_instruction = f"""
-              Based on this science explanation, provide exactly one single English keyword
-              representing the visual background setting.
+        # Initialize the official Google GenAI client
+        client = genai.Client(api_key=GOOGLE_API_KEY)
 
-              Examples:
-              laboratory, forest, space, ocean, mountain, cosmos, microscopic
+        creative_instruction = f"""
+            You are Professor Phunsuk Wangdu, an elite, world-class specialist science teacher known for making complex science phenomenally clear, intuitive, and engaging.
+            Explain the given scientific concept tailored specifically for a student in **{grade_level}**.
 
-              Do not include punctuation or other words.
+          Science Concept / Question:
+          {prompt}
 
-              Story:
-              {story_text}
+          Core Pedagogical Guidelines:
+           - Match the cognitive depth, vocabulary level, and comprehension style precisely to **{grade_level}** (Keep it simpler and highly visual for lower primary standards, and introduce accurate scientific terminology with deep conceptual clarity for upper grades like 8th to 10th).
+           - Weave the concept into an immersive, crystal-clear story or thought experiment that eliminates confusion completely.
+           - Use clean, structured formatting with exactly 3 well-defined paragraphs.
+           - Ensure high conceptual clarity so the student grasps the fundamental law, mechanism, or working principle effortlessly.
+           - Conclude with a memorable core scientific takeaway summary.
              """
-            payload_mood = {
-                "model": "Qwen/Qwen2.5-7B-Instruct",
-                "messages": [{"role": "user", "content": mood_instruction}],
-                "max_tokens": 10,
-                "temperature": 0.1
-            }
-            mood_response = requests.post(API_URL, headers=headers, json=payload_mood, timeout=10)
-            mood_keyword = "default"
-            if mood_response.status_code == 200:
-                mood_keyword = mood_response.json()["choices"][0]["message"]["content"].strip().lower()
-                mood_keyword = mood_keyword.replace(".", "").replace('"', '').replace("'", "").split()[0]
-            
-            return story_text, mood_keyword
-        else:
-            return f"Error connecting to AI teacher model: {response.status_code} - {response.text}", "default"
+        
+        # Generate story content
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=creative_instruction,
+        )
+        story_text = response.text.strip()
+        
+        # Generate background keyword mood
+        mood_instruction = f"""
+          Based on this science explanation, provide exactly one single English keyword
+          representing the visual background setting.
+
+          Examples:
+          laboratory, forest, space, ocean, mountain, cosmos, microscopic
+
+          Do not include punctuation or other words.
+
+          Story:
+          {story_text}
+         """
+        mood_response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=mood_instruction,
+        )
+        mood_keyword = "default"
+        if mood_response.text:
+            mood_keyword = mood_response.text.strip().lower()
+            mood_keyword = mood_keyword.replace(".", "").replace('"', '').replace("'", "").split()[0]
+        
+        return story_text, mood_keyword
+
     except Exception as e:
-        return f"Network request failed: {str(e)}", "default"
+        return f"Error connecting to Google GenAI model: {str(e)}", "default"
 
 async def convert_text_to_neural_audio(text, output_path, voice):
     communicate = edge_tts.Communicate(text, voice)
@@ -215,13 +203,13 @@ if st.button("✨ Start Masterclass Lesson & Audio"):
         with st.spinner(f"Professor Phunsuk Wangdu is tailoring a high-clarity lesson for {selected_standard}..."):
             story_text, mood = generate_story_and_mood(user_prompt, selected_standard)
         
-        if not story_text.startswith("⚠️") and not story_text.startswith("Error") and not story_text.startswith("Network"):
+        if not story_text.startswith("⚠️") and not story_text.startswith("Error"):
             st.session_state.bg_url = f"https://images.unsplash.com/photo-1507413245164-6160d8298b31?auto=format&fit=crop&w=1600&h=900&q=80&sig={mood}"
             apply_custom_ui(st.session_state.bg_url)
             
         st.markdown(f'<div class="story-card"><h3>🧪 Professor Phunsuk Wangdu’s Masterclass ({selected_standard})</h3><p>{story_text.replace(chr(10), "<br>")}</p></div>', unsafe_allow_html=True)
         
-        if not story_text.startswith("⚠️") and not story_text.startswith("Error") and not story_text.startswith("Network"):
+        if not story_text.startswith("⚠️") and not story_text.startswith("Error"):
             with st.spinner("Synthesizing professional high-definition narration..."):
                 try:
                     audio_path = "masterclass_lesson.mp3"
