@@ -3,3 +3,8 @@ requests
 edge-tts
 click>=8.1.0,<8.2.0
 huggingface-hub<0.26.0
+
+streamlit
+google-genai
+edge-tts
+requests
