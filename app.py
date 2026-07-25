@@ -131,65 +131,75 @@ NEURAL_VOICE = "en-US-BrianNeural"
 
 def generate_story_and_mood(prompt, grade_level):
     if not GITHUB_TOKEN:
-        return "⚠️ Backend Error: GITHUB_TOKEN is missing in the system environment configuration or Streamlit secrets.", "default"
+        return "⚠️ Backend Error: GITHUB_TOKEN is missing in the system environment configuration or Streamlit secrets.", "default", "None"
     
+    # Initialize OpenAI Client connected to GitHub Models endpoint
     try:
-        # Initialize OpenAI Client connected to GitHub Models endpoint
         client = OpenAI(
             base_url="https://models.inference.ai.azure.com",
             api_key=GITHUB_TOKEN,
         )
+    except Exception as e:
+        return f"Error initializing GitHub client: {str(e)}", "default", "None"
 
-        creative_instruction = f"""
-            You are Professor Phunsuk Wangdu, an elite, world-class specialist science teacher known for making complex science phenomenally clear, intuitive, and engaging.
-            Explain the given scientific concept tailored specifically for a student in **{grade_level}**.
+    creative_instruction = f"""
+        You are Professor Phunsuk Wangdu, an elite, world-class specialist science teacher known for making complex science phenomenally clear, intuitive, and engaging.
+        Explain the given scientific concept tailored specifically for a student in **{grade_level}**.
 
-          Science Concept / Question:
-          {prompt}
+      Science Concept / Question:
+      {prompt}
 
-          Core Pedagogical Guidelines:
-           - Match the cognitive depth, vocabulary level, and comprehension style precisely to **{grade_level}** (Keep it simpler and highly visual for lower primary standards, and introduce accurate scientific terminology with deep conceptual clarity for upper grades like 8th to 10th).
-           - Weave the concept into an immersive, crystal-clear story or thought experiment that eliminates confusion completely.
-           - Use clean, structured formatting with exactly 3 well-defined paragraphs.
-           - Ensure high conceptual clarity so the student grasps the fundamental law, mechanism, or working principle effortlessly.
-           - Conclude with a memorable core scientific takeaway summary.
-             """
-        
-        # Call GitHub hosted model (Meta Llama 3.3 70B Instruct)
-        response = client.chat.completions.create(
-            model="meta-llama-3.3-70b-instruct",
-            messages=[{"role": "user", "content": creative_instruction}],
-            temperature=0.7,
-        )
-        story_text = response.choices[0].message.content.strip()
-        
-        # Generate background keyword mood
-        mood_instruction = f"""
-          Based on this science explanation, provide exactly one single English keyword
-          representing the visual background setting.
-
-          Examples:
-          laboratory, forest, space, ocean, mountain, cosmos, microscopic
-
-          Do not include punctuation or other words.
-
-          Story:
-          {story_text}
+      Core Pedagogical Guidelines:
+       - Match the cognitive depth, vocabulary level, and comprehension style precisely to **{grade_level}**.
+       - Weave the concept into an immersive, crystal-clear story or thought experiment.
+       - Use clean, structured formatting with exactly 3 well-defined paragraphs.
+       - Conclude with a memorable core scientific takeaway summary.
          """
+
+    mood_instruction = f"""
+      Based on this science explanation, provide exactly one single English keyword
+      representing the visual background setting (e.g., laboratory, forest, space, ocean, mountain).
+      Do not include punctuation.
+     """
+
+    # Define model fallback sequence (Primary -> Backup)
+    fallback_models = ["Llama-3.3-70b", "Phi-4-mini-instruct"]
+
+    story_text = None
+    active_model = None
+
+    # Try models sequentially until one responds successfully
+    for model_name in fallback_models:
+        try:
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=[{"role": "user", "content": creative_instruction}],
+                temperature=0.7,
+            )
+            story_text = response.choices[0].message.content.strip()
+            active_model = model_name
+            break # Successfully generated, exit loop
+        except Exception:
+            continue # Try next model in sequence
+
+    if not story_text:
+        return "⚠️ All fallback models failed to respond. Please check your token or limits.", "default", "None"
+
+    # Generate mood keyword using the active model
+    mood_keyword = "default"
+    try:
         mood_response = client.chat.completions.create(
-            model="meta-llama-3.3-70b-instruct",
-            messages=[{"role": "user", "content": mood_instruction}],
+            model=active_model,
+            messages=[{"role": "user", "content": mood_instruction + f"\nStory: {story_text}"}],
             temperature=0.3,
         )
-        mood_keyword = "default"
         if mood_response.choices[0].message.content:
             mood_keyword = mood_response.choices[0].message.content.strip().lower()
             mood_keyword = mood_keyword.replace(".", "").replace('"', '').replace("'", "").split()[0]
-        
-        return story_text, mood_keyword
+    except Exception:
+        pass
 
-    except Exception as e:
-        return f"Error connecting to GitHub Model: {str(e)}", "default"
+    return story_text, mood_keyword, active_model
 
 async def convert_text_to_neural_audio(text, output_path, voice):
     communicate = edge_tts.Communicate(text, voice)
@@ -200,16 +210,16 @@ if st.button("✨ Start Masterclass Lesson & Audio"):
     if user_prompt.strip() == "":
         st.warning("Please provide a science concept first!")
     else:
-        with st.spinner(f"Professor Phunsuk Wangdu is tailoring a high-clarity lesson for {selected_standard}..."):
-            story_text, mood = generate_story_and_mood(user_prompt, selected_standard)
+        with st.spinner(f"Professor Phunsuk Wangdu is crafting a high-clarity lesson for {selected_standard}..."):
+            story_text, mood, active_model = generate_story_and_mood(user_prompt, selected_standard)
         
-        if not story_text.startswith("⚠️") and not story_text.startswith("Error"):
+        if not story_text.startswith("⚠️"):
             st.session_state.bg_url = f"https://images.unsplash.com/photo-1507413245164-6160d8298b31?auto=format&fit=crop&w=1600&h=900&q=80&sig={mood}"
             apply_custom_ui(st.session_state.bg_url)
             
-        st.markdown(f'<div class="story-card"><h3>🧪 Professor Phunsuk Wangdu’s Masterclass ({selected_standard})</h3><p>{story_text.replace(chr(10), "<br>")}</p></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="story-card"><h3>🧪 Professor Phunsuk Wangdu’s Masterclass ({selected_standard})</h3><p>{story_text.replace(chr(10), "<br>")}</p><hr style="border-color:rgba(255,255,255,0.2)"><small style="color: #e0e0e0;">⚡ Served via GitHub Model: <b>{active_model}</b></small></div>', unsafe_allow_html=True)
         
-        if not story_text.startswith("⚠️") and not story_text.startswith("Error"):
+        if not story_text.startswith("⚠️"):
             with st.spinner("Synthesizing professional high-definition narration..."):
                 try:
                     audio_path = "masterclass_lesson.mp3"
@@ -217,3 +227,4 @@ if st.button("✨ Start Masterclass Lesson & Audio"):
                     st.audio(audio_path, format="audio/mp3")
                 except Exception as e:
                     st.error(f"Audio generation failed: {e}")
+
