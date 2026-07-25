@@ -5,7 +5,7 @@ import streamlit as st
 import edge_tts
 
 # Streamlit UI configuration
-st.set_page_config(page_title="AI Audio Storyteller", page_icon="📖", layout="centered")
+st.set_page_config(page_title="AI Science Storyteller", page_icon="🔬", layout="centered")
 
 # --- Custom Premium CSS Styling (Glassmorphism UI) ---
 def apply_custom_ui(background_url):
@@ -13,7 +13,7 @@ def apply_custom_ui(background_url):
     <style>
     /* Dynamic full-screen background */
     [data-testid="stAppViewContainer"] {{
-        background: linear-gradient(rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0.45)), 
+        background: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), 
                     url("{background_url}");
         background-size: cover;
         background-position: center;
@@ -80,28 +80,6 @@ def apply_custom_ui(background_url):
         box-shadow: 0 4px 12px rgba(255,255,255,0.3);
     }}
 
-    .stSlider{{
-        margin-bottom:10px;
-    }}
-
-    .stSlider [role="slider"]{{
-        background:#00E5FF !important;
-        border:3px solid white !important;
-        box-shadow:0 0 18px cyan;
-    }}
-
-    .stSlider [data-baseweb="slider"] > div:nth-child(2){{
-        height:10px;
-        border-radius:20px;
-        background:linear-gradient(90deg,#00E5FF,#0066FF);
-    }}
-
-    .stSlider label{{
-        color:white !important;
-        font-weight:bold;
-        text-align:center;
-    }}
-
     h3{{
         color:white;
     }}
@@ -110,180 +88,194 @@ def apply_custom_ui(background_url):
 
 # Initialize app session state defaults
 if "bg_url" not in st.session_state:
-    st.session_state.bg_url = "https://images.unsplash.com/photo-1519681393784-d120267933ba"
+    st.session_state.bg_url = "https://images.unsplash.com/photo-1507413245164-6160d8298b31"
 
-# Execute application UI design shell
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if "student_username" not in st.session_state:
+    st.session_state.student_username = ""
+
+# Mock database dictionary to register up to 200 students locally in session/memory
+# (For a real multi-user public web deployment, connect this to SQLite / Firebase / Supabase)
+if "student_db" not in st.session_state:
+    st.session_state.student_db = {"student1": "password123"} # Sample default account
+
 apply_custom_ui(st.session_state.bg_url)
 
-# App UI Header
-st.title("📖 Audio Storyteller By Aafreen")
-st.write("Enter an idea, and watch the SLM weave a tale narrated by a lifelike neural voice with matching ambiance!")
+# --- STUDENT AUTHENTICATION SYSTEM ---
+if not st.session_state.logged_in:
+    st.title("🔬 Student Portal Login")
+    st.write("Welcome to Professor Phunsuk Wangdu's Science Lab! Please log in or register to enter.")
 
-# User input prompt
-user_prompt = st.text_input("Enter a theme or idea:", "A brave drone exploring a hidden valley")
+    auth_tab1, auth_tab2 = st.tabs(["🔑 Login", "📝 Register New Student"])
 
-st.markdown("---")
-st.subheader("🎚 Story Genre Mixer")
+    with auth_tab1:
+        login_user = st.text_input("Username", key="login_user")
+        login_pass = st.text_input("Password", type="password", key="login_pass")
+        if st.button("Log In"):
+            if login_user in st.session_state.student_db and st.session_state.student_db[login_user] == login_pass:
+                st.session_state.logged_in = True
+                st.session_state.student_username = login_user
+                st.success(f"Welcome back, {login_user}!")
+                st.rerun()
+            else:
+                st.error("Invalid username or password.")
 
-genre_weights = {}
+    with auth_tab2:
+        reg_user = st.text_input("Choose a Username", key="reg_user")
+        reg_pass = st.text_input("Choose a Password", type="password", key="reg_pass")
+        if st.button("Register Account"):
+            if reg_user.strip() == "" or reg_pass.strip() == "":
+                st.warning("Please fill in all fields.")
+            elif reg_user in st.session_state.student_db:
+                st.warning("Username already exists. Choose another one.")
+            else:
+                st.session_state.student_db[reg_user] = reg_pass
+                st.success("Registration successful! You can now log in from the Login tab.")
 
-col1, col2, col3, col4, col5 = st.columns(5)
-
-with col1:
-    genre_weights["Fantasy"] = st.slider("🧙 Fantasy", 0, 100, 80)
-with col2:
-    genre_weights["Adventure"] = st.slider("🗺 Adventure", 0, 100, 70)
-with col3:
-    genre_weights["Mystery"] = st.slider("🕵 Mystery", 0, 100, 30)
-with col4:
-    genre_weights["Sci-Fi"] = st.slider("🚀 Sci-Fi", 0, 100, 50)
-with col5:
-    genre_weights["Comedy"] = st.slider("😂 Comedy", 0, 100, 20)
-
-col6, col7, col8, col9, col10 = st.columns(5)
-
-with col6:
-    genre_weights["Romance"] = st.slider("❤️ Romance", 0, 100, 10)
-with col7:
-    genre_weights["Horror"] = st.slider("👻 Horror", 0, 100, 5)
-with col8:
-    genre_weights["Magic"] = st.slider("✨ Magic", 0, 100, 90)
-with col9:
-    genre_weights["Medieval"] = st.slider("🏰 Medieval", 0, 100, 40)
-with col10:
-    genre_weights["Cyberpunk"] = st.slider("🤖 Cyberpunk", 0, 100, 25)
-
-# Stable serverless routing endpoints
-API_URL = "https://router.huggingface.co/v1/chat/completions"
-
-# Safely fetch token from Streamlit secrets (or fallback cleanly if not set yet)
-HF_TOKEN = st.secrets.get("hf_token", "")
-
-# Language Selection
-language = st.radio(
-    "🌐 Choose Story Language:",
-    ["English", "Hindi"],
-    horizontal=True
-)
-
-if language == "Hindi":
-    NEURAL_VOICE = "hi-IN-SwaraNeural"  # Natural and expressive Hindi neural voice
+# --- MAIN APP INTERFACE (Unlocked after Login) ---
 else:
-    NEURAL_VOICE = "en-US-BrianNeural"
+    # Sidebar control for user session management & optional personal token
+    with st.sidebar:
+        st.write(f"👤 Logged in as: **{st.session_state.student_username}**")
+        
+        # Option for user/teacher to input their own API token dynamically per session
+        dynamic_hf_token = st.text_input("Hugging Face Token:", type="password", help="Paste your HF token here to run queries.")
+        
+        st.markdown("---")
+        if st.button("Log Out"):
+            st.session_state.logged_in = False
+            st.session_state.student_username = ""
+            st.rerun()
 
-genre_mix = ""
+    # App UI Header
+    st.title("🔬 Professor Phunsuk Wangdu's Science Stories")
+    st.write(f"Hello **{st.session_state.student_username}**! Enter any science concept, and let Professor Phunsuk Wangdu explain it through a fascinating, simple story tailored for school students!")
 
-for genre, value in genre_weights.items():
-    if value > 0:
-        genre_mix += f"{genre}: {value}%\n"
+    # User input prompt
+    user_prompt = st.text_input("Enter a science concept (e.g., How do black holes work?, What is photosynthesis?):", "How do plants make food using sunlight?")
 
-def generate_story_and_mood(prompt):
-    if not HF_TOKEN:
-        return "⚠️ Error: Please configure your Hugging Face token in Streamlit secrets.", "default"
-    
-    headers = {
-        "Authorization": f"Bearer {HF_TOKEN}",
-        "Content-Type": "application/json"
-    }
+    st.markdown("---")
+
+    # Stable serverless routing endpoints
+    API_URL = "https://router.huggingface.co/v1/chat/completions"
+
+    # Language Selection
+    language = st.radio(
+        "🌐 Choose Explanation Language:",
+        ["English", "Hindi"],
+        horizontal=True
+    )
 
     if language == "Hindi":
-        language_instruction = (
-            "Write the story completely in modern, natural, conversational Hindi "
-            "(बोलचाल की हिंदी) as spoken by everyday people today. Avoid overly formal, "
-            "archaic, or Sanskritized vocabulary. Make it sound warm and expressive."
-        )
+        NEURAL_VOICE = "hi-IN-SwaraNeural"  # Expressive Hindi voice
     else:
-        language_instruction = "Write the story completely in English language." 
+        NEURAL_VOICE = "en-US-BrianNeural"
 
-    creative_instruction = f"""
-       Write an amazing children's story.
+    def generate_story_and_mood(prompt, token):
+        if not token:
+            return "⚠️ Error: Please enter your Hugging Face token in the sidebar to generate stories.", "default"
+        
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
 
-      {language_instruction}
-
-      Theme:
-      {prompt}
-
-      Genre Equalizer:
-
-      {genre_mix}
-
-      Instructions:
-       - Blend every selected genre naturally according to its percentage.
-       - Higher percentage means stronger influence.
-       - Do NOT mention percentages.
-       - Write exactly 4 detailed paragraphs.
-       - Include dialogues using natural conversational flow.
-       - Include emotions and vivid descriptions.
-       - End with a memorable conclusion.
-         """
-    
-    payload_story = {
-        "model": "Qwen/Qwen2.5-7B-Instruct",
-        "messages": [{"role": "user", "content": creative_instruction}],
-        "max_tokens": 800,
-        "temperature": 0.8
-    }
-    
-    try:
-        response = requests.post(API_URL, headers=headers, json=payload_story, timeout=20)
-        if response.status_code == 200:
-            story_text = response.json()["choices"][0]["message"]["content"].strip()
-            
-            mood_instruction = f"""
-              Based on this story, provide exactly one single English keyword
-              representing the setting/environment.
-
-             Examples:
-             jungle, space, ocean, castle, desert
-
-              Do not include punctuation or other words.
-
-              Story:
-              {story_text}
-             """
-            payload_mood = {
-                "model": "Qwen/Qwen2.5-7B-Instruct",
-                "messages": [{"role": "user", "content": mood_instruction}],
-                "max_tokens": 10,
-                "temperature": 0.1
-            }
-            mood_response = requests.post(API_URL, headers=headers, json=payload_mood, timeout=10)
-            mood_keyword = "default"
-            if mood_response.status_code == 200:
-                mood_keyword = mood_response.json()["choices"][0]["message"]["content"].strip().lower()
-                mood_keyword = mood_keyword.replace(".", "").replace('"', '').replace("'", "").split()[0]
-            
-            return story_text, mood_keyword
+        if language == "Hindi":
+            language_instruction = (
+                "Write the explanation completely in simple, modern, conversational Hindi "
+                "(बोलचाल की हिंदी) suitable for students up to 10th standard, maintaining the inspiring, "
+                "curious, and practical teaching style of Phunsuk Wangdu. Avoid heavy technical jargon; "
+                "explain scientific terms using creative everyday stories and examples."
+            )
         else:
-            return f"Error connecting to SLM model: {response.status_code} - {response.text}", "default"
-    except Exception as e:
-        return f"Network request failed: {str(e)}", "default"
+            language_instruction = "Write the explanation completely in simple, creative English using easy-to-understand storytelling suitable for students up to 10th standard, embodying the innovative and joyful teaching spirit of Phunsuk Wangdu." 
 
-# Helper function to handle async neural speech generation
-async def convert_text_to_neural_audio(text, output_path, voice):
-    communicate = edge_tts.Communicate(text, voice)
-    await communicate.save(output_path)
+        creative_instruction = f"""
+            You are Professor Phunsuk Wangdu, an expert, friendly, and innovative specialist science teacher for school students up to 10th grade. 
+            Explain the given scientific concept by weaving it into a short, highly engaging, and memorable story.
 
-# Execution button
-if st.button("Generate & Narrate Story"):
-    if user_prompt.strip() == "":
-        st.warning("Please provide a prompt first!")
-    else:
-        with st.spinner("The SLM is weaving a magical tale and feeling the mood..."):
-            story_text, mood = generate_story_and_mood(user_prompt)
+          {language_instruction}
+
+          Science Concept / Question:
+          {prompt}
+
+          Instructions:
+           - Teach the core scientific principle clearly through characters or an imaginative adventure, just like Phunsuk Wangdu would (focusing on practical understanding rather than rote learning).
+           - Use simple, intuitive analogies that a middle/high school student can effortlessly picture.
+           - Write exactly 3 short, easy-to-read paragraphs.
+           - Include light dialogues or curious questions to keep the student hooked.
+           - Conclude with a quick, fun summary takeaway of the exact science fact.
+             """
         
-        if not story_text.startswith("⚠️") and not story_text.startswith("Error") and not story_text.startswith("Network"):
-            st.session_state.bg_url = f"https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1600&h=900&q=80&sig={mood}"
-            apply_custom_ui(st.session_state.bg_url)
+        payload_story = {
+            "model": "Qwen/Qwen2.5-7B-Instruct",
+            "messages": [{"role": "user", "content": creative_instruction}],
+            "max_tokens": 800,
+            "temperature": 0.7
+        }
+        
+        try:
+            response = requests.post(API_URL, headers=headers, json=payload_story, timeout=20)
+            if response.status_code == 200:
+                story_text = response.json()["choices"][0]["message"]["content"].strip()
+                
+                mood_instruction = f"""
+                  Based on this science story, provide exactly one single English keyword
+                  representing the background setting.
+
+                  Examples:
+                  laboratory, forest, space, ocean, mountain, garden
+
+                  Do not include punctuation or other words.
+
+                  Story:
+                  {story_text}
+                 """
+                payload_mood = {
+                    "model": "Qwen/Qwen2.5-7B-Instruct",
+                    "messages": [{"role": "user", "content": mood_instruction}],
+                    "max_tokens": 10,
+                    "temperature": 0.1
+                }
+                mood_response = requests.post(API_URL, headers=headers, json=payload_mood, timeout=10)
+                mood_keyword = "default"
+                if mood_response.status_code == 200:
+                    mood_keyword = mood_response.json()["choices"][0]["message"]["content"].strip().lower()
+                    mood_keyword = mood_keyword.replace(".", "").replace('"', '').replace("'", "").split()[0]
+                
+                return story_text, mood_keyword
+            else:
+                return f"Error connecting to AI teacher model: {response.status_code} - {response.text}", "default"
+        except Exception as e:
+            return f"Network request failed: {str(e)}", "default"
+
+    async def convert_text_to_neural_audio(text, output_path, voice):
+        communicate = edge_tts.Communicate(text, voice)
+        await communicate.save(output_path)
+
+    # Execution button
+    if st.button("Explain Concept with a Story & Audio"):
+        if not dynamic_hf_token.strip():
+            st.warning("⚠️ Please provide your Hugging Face token in the sidebar first!")
+        elif user_prompt.strip() == "":
+            st.warning("Please provide a science concept first!")
+        else:
+            with st.spinner("Professor Phunsuk Wangdu is preparing a fun science lesson for you..."):
+                story_text, mood = generate_story_and_mood(user_prompt, dynamic_hf_token)
             
-        st.markdown(f'<div class="story-card"><h3>📜 The Story</h3><p>{story_text.replace(chr(10), "<br>")}</p></div>', unsafe_allow_html=True)
-        
-        if not story_text.startswith("⚠️") and not story_text.startswith("Error") and not story_text.startswith("Network"):
-            with st.spinner("Synthesizing human-like audio narration..."):
-                try:
-                    audio_path = "story_narration.mp3"
-                    asyncio.run(convert_text_to_neural_audio(story_text, audio_path, NEURAL_VOICE))
-                    st.audio(audio_path, format="audio/mp3")
-                except Exception as e:
-                    st.error(f"Audio generation failed: {e}")
-
+            if not story_text.startswith("⚠️") and not story_text.startswith("Error") and not story_text.startswith("Network"):
+                st.session_state.bg_url = f"https://images.unsplash.com/photo-1507413245164-6160d8298b31?auto=format&fit=crop&w=1600&h=900&q=80&sig={mood}"
+                apply_custom_ui(st.session_state.bg_url)
+                
+            st.markdown(f'<div class="story-card"><h3>🧪 Professor Phunsuk Wangdu’s Science Story</h3><p>{story_text.replace(chr(10), "<br>")}</p></div>', unsafe_allow_html=True)
+            
+            if not story_text.startswith("⚠️") and not story_text.startswith("Error") and not story_text.startswith("Network"):
+                with st.spinner("Synthesizing clear teacher narration..."):
+                    try:
+                        audio_path = f"science_lesson_{st.session_state.student_username}.mp3"
+                        asyncio.run(convert_text_to_neural_audio(story_text, audio_path, NEURAL_VOICE))
+                        st.audio(audio_path, format="audio/mp3")
+                    except Exception as e:
+                        st.error(f"Audio generation failed: {e}")
