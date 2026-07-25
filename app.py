@@ -154,7 +154,7 @@ def generate_story_and_mood(prompt, grade_level):
         
         # Updated model name to match Cerebras's verified deployment registry string
         response = client.chat.completions.create(
-            model="llama3.3-70b",
+            model="llama-3.3-70b",
             messages=[{"role": "user", "content": creative_instruction}]
         )
         story_text = response.choices[0].message.content.strip()
