@@ -128,8 +128,11 @@ user_prompt = st.text_input("Enter a science concept or question (e.g., How do b
 
 st.markdown("---")
 
-# Safely fetch Google API Key from backend environment variables or Streamlit secrets
+# Safely fetch Google API Key
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY") or st.secrets.get("GOOGLE_API_KEY", "")
+
+# Pass the key explicitly to avoid authentication misses
+client = genai.Client(api_key=GOOGLE_API_KEY)
 
 # Fixed professional neural voice in English
 NEURAL_VOICE = "en-US-BrianNeural"
