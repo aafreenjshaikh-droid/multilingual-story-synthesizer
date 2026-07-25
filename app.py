@@ -128,11 +128,8 @@ user_prompt = st.text_input("Enter a science concept or question (e.g., How do b
 
 st.markdown("---")
 
-# Safely fetch Google API Key
+# Safely fetch Google API Key from backend environment variables or Streamlit secrets
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY") or st.secrets.get("GOOGLE_API_KEY", "")
-
-# Pass the key explicitly to avoid authentication misses
-client = genai.Client(api_key=GOOGLE_API_KEY)
 
 # Fixed professional neural voice in English
 NEURAL_VOICE = "en-US-BrianNeural"
@@ -142,7 +139,7 @@ def generate_story_and_mood(prompt, grade_level):
         return "⚠️ Backend Error: GOOGLE_API_KEY is missing in the system environment configuration.", "default"
     
     try:
-        # Initialize the official Google GenAI client
+        # Explicitly pass api_key to bypass OAuth / Vertex token requirements
         client = genai.Client(api_key=GOOGLE_API_KEY)
 
         creative_instruction = f"""
@@ -160,7 +157,7 @@ def generate_story_and_mood(prompt, grade_level):
            - Conclude with a memorable core scientific takeaway summary.
              """
         
-        # Generate story content
+        # Generate story content using Gemini 2.5 Flash
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=creative_instruction,
