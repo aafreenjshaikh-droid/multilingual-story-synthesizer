@@ -139,7 +139,7 @@ def generate_story_and_mood(prompt, grade_level):
         return "⚠️ Backend Error: GOOGLE_API_KEY is missing in the system environment configuration.", "default"
     
     try:
-        # Explicitly pass api_key to bypass OAuth / Vertex token requirements
+        # Explicitly pass api_key to the client
         client = genai.Client(api_key=GOOGLE_API_KEY)
 
         creative_instruction = f"""
@@ -157,7 +157,7 @@ def generate_story_and_mood(prompt, grade_level):
            - Conclude with a memorable core scientific takeaway summary.
              """
         
-        # Generate story content using Gemini 2.5 Flash
+        # Updated to active production model: gemini-2.5-flash
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=creative_instruction,
